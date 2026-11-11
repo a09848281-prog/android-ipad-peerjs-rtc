@@ -29,8 +29,8 @@ video{width:100%;max-height:58vh;background:#020617;border-radius:12px;object-fi
 <h2>① 接続設定</h2>
 <label for="gasUrl">GAS WebアプリURL（/execまで）</label>
 <input id="gasUrl" type="url" autocomplete="url" placeholder="https://script.google.com/macros/s/.../exec">
-<label for="room">接続コード（Androidと同じ12桁）</label>
-<input id="room" inputmode="numeric" maxlength="12" placeholder="例：123456789012">
+<label for="room">接続コード（Androidと同じ6桁）</label>
+<input id="room" inputmode="numeric" maxlength="6" placeholder="例：123456">
 <button id="save" type="button">設定を保存</button>
 <p class="hint">GASは「ウェブアプリ」としてデプロイし、アクセスできるユーザーをAndroid・iPadの両方から利用可能にしてください。</p>
 </section>
@@ -63,7 +63,7 @@ function setStatus(s){status.textContent=s;}
 function validSettings(){
  gasUrl=$("gasUrl").value.trim();room=$("room").value.trim();
  if(!/^https:\/\/script\.google\.com\/macros\/s\/[^\s]+\/exec$/.test(gasUrl)){setStatus("GASの/exec URLを正しく入力してください");return false;}
- if(!/^\d{12}$/.test(room)){setStatus("接続コードは12桁の数字です");return false;}
+ if(!/^\d{6}$/.test(room)){setStatus("接続コードは6桁の数字です");return false;}
  localStorage.setItem("a22_gas_url",gasUrl);localStorage.setItem("a22_room",room);return true;
 }
 function jsonp(params){
