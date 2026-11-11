@@ -95,7 +95,7 @@ public class StreamService extends Service {
 
         gasUrl = intent.getStringExtra(EXTRA_GAS_URL);
         room = intent.getStringExtra(EXTRA_ROOM);
-        if (gasUrl == null || room == null || !room.matches("[0-9]{12}")) {
+        if (gasUrl == null || room == null || !room.matches("[0-9]{6}")) {
             stopSelf();
             return START_NOT_STICKY;
         }
