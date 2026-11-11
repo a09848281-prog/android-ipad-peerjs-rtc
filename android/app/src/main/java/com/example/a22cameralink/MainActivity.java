@@ -57,14 +57,14 @@ public class MainActivity extends Activity {
         panel.addView(gasInput, matchWidth());
 
         TextView roomLabel = new TextView(this);
-        roomLabel.setText("iPadと同じ12桁の接続コード");
+        roomLabel.setText("iPadと同じ6桁の接続コード");
         addGap(panel, 16);
         panel.addView(roomLabel);
         roomInput = new EditText(this);
         roomInput.setSingleLine(true);
         roomInput.setInputType(InputType.TYPE_CLASS_NUMBER);
-        roomInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(12)});
-        roomInput.setHint("例：123456789012");
+        roomInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
+        roomInput.setHint("例：123456");
         roomInput.setText(preferences.getString("room", ""));
         panel.addView(roomInput, matchWidth());
 
@@ -106,8 +106,8 @@ public class MainActivity extends Activity {
             statusView.setText("GASのWebアプリ /exec URLを確認してください");
             return;
         }
-        if (!room.matches("[0-9]{12}")) {
-            statusView.setText("接続コードは12桁の数字です");
+        if (!room.matches("[0-9]{6}")) {
+            statusView.setText("接続コードは6桁の数字です");
             return;
         }
         preferences.edit().putString("gas_url", gas).putString("room", room).apply();
