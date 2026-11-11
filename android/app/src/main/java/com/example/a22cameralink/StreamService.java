@@ -58,15 +58,15 @@ public class StreamService extends Service {
     private String room;
     private String turnConfig = "[]";
     private long lastMessageId = 0;
-    private boolean running = false;
-    private boolean remoteDescriptionReady = false;
+    private volatile boolean running = false;
+    private volatile boolean remoteDescriptionReady = false;
 
     private HandlerThread workerThread;
-    private Handler worker;
+    private volatile Handler worker;
     private PowerManager.WakeLock wakeLock;
 
     private PeerConnectionFactory factory;
-    private PeerConnection peerConnection;
+    private volatile PeerConnection peerConnection;
     private EglBase eglBase;
     private SurfaceTextureHelper surfaceTextureHelper;
     private CameraVideoCapturer cameraCapturer;
@@ -74,7 +74,7 @@ public class StreamService extends Service {
     private VideoTrack videoTrack;
     private AudioSource audioSource;
     private AudioTrack audioTrack;
-    private final List<IceCandidate> pendingCandidates = new ArrayList<>();
+    private final List<IceCandidate> pendingCandidates = Collections.synchronizedList(new ArrayList<>());
 
     @Override
     public void onCreate() {
@@ -357,8 +357,10 @@ public class StreamService extends Service {
 
     private void flushPendingCandidates() {
         if (peerConnection == null) return;
-        for (IceCandidate candidate : pendingCandidates) peerConnection.addIceCandidate(candidate);
-        pendingCandidates.clear();
+        synchronized (pendingCandidates) {
+            for (IceCandidate candidate : pendingCandidates) peerConnection.addIceCandidate(candidate);
+            pendingCandidates.clear();
+        }
     }
 
     private void sendSignal(String type, Object data) {
