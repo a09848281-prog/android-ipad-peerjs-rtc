@@ -1,243 +1,212 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>A22 Camera Link</title>
-  <link rel="manifest" href="./manifest.webmanifest">
-  <style>
-    :root{color-scheme:dark;font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;background:#0b1220;color:#eef2ff}
-    *{box-sizing:border-box}body{margin:0;padding:20px;max-width:760px;margin-inline:auto}
-    h1{font-size:1.55rem;margin:5px 0 8px}.sub{color:#aab6ce;line-height:1.6}
-    .card{background:#151f32;border:1px solid #2b3952;border-radius:16px;padding:16px;margin:14px 0}
-    label{display:block;font-weight:650;margin:12px 0 6px}
-    input,textarea{width:100%;padding:13px;border:1px solid #465775;border-radius:10px;background:#0d1728;color:#fff;font:inherit}
-    textarea{min-height:80px;resize:vertical}button{border:0;border-radius:11px;padding:13px 16px;font:inherit;font-weight:700;background:#3b82f6;color:white;margin:8px 6px 0 0}
-    button.secondary{background:#34445f}button.danger{background:#b93848}
-    #status{font-weight:700;color:#93c5fd;min-height:1.5em}.hint{font-size:.9rem;color:#aab6ce;line-height:1.55}
-    video{width:100%;max-height:65vh;background:#020617;border-radius:12px;object-fit:contain}
-    .row{display:flex;gap:8px;flex-wrap:wrap}.row button{flex:1}
-    code{overflow-wrap:anywhere;color:#bfdbfe}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="AndroidとiPadで使えるWebRTCカメラ・マイク共有PWA">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>WebRTC Camera Link</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;background:#0b1220;color:#eef2ff}
+*{box-sizing:border-box}body{margin:0;padding:18px;max-width:760px;margin-inline:auto}
+h1{font-size:1.55rem;margin:4px 0 8px}.lead,.hint{color:#aab6ce;line-height:1.6}
+.card{background:#151f32;border:1px solid #2b3952;border-radius:16px;padding:16px;margin:14px 0}
+label{display:block;font-weight:700;margin:12px 0 6px}
+input{width:100%;padding:13px;border:1px solid #465775;border-radius:10px;background:#0d1728;color:#fff;font:inherit}
+button{border:0;border-radius:11px;padding:13px 16px;font:inherit;font-weight:700;background:#3478e5;color:white;margin:7px 5px 0 0}
+button.secondary{background:#34445f}button.danger{background:#b93848}button:disabled{opacity:.5}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row button{flex:1}
+.status{font-weight:700;color:#93c5fd;min-height:1.5em;overflow-wrap:anywhere}
+video{width:100%;max-height:58vh;background:#020617;border-radius:12px;object-fit:contain}
+.hidden{display:none!important}.code{font-size:1.2rem;letter-spacing:.08em;font-weight:800;overflow-wrap:anywhere;color:#bfdbfe}
+.notice{border-left:4px solid #e5a33b;padding:10px 12px;background:#2b261c;border-radius:8px;color:#f8dfb2;line-height:1.55}
+</style>
 </head>
 <body>
-  <h1>📷 A22 Camera Link</h1>
-  <p class="sub">iPadで映像・音声を受信するPWAです。映像と音声はWebRTCで端末間に送信し、GASには接続情報だけを一時保存します。</p>
-
-  <section class="card">
-    <label for="gasUrl">① GAS WebアプリURL</label>
-    <input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/...../exec" autocomplete="url">
-    <label for="room">② 接続コード（Androidにも同じ番号を入力）</label>
-    <input id="room" inputmode="numeric" maxlength="12" placeholder="12桁の数字">
-    <div class="row">
-      <button id="newCode" class="secondary" type="button">🔑 新しいコードを作る</button>
-      <button id="copyCode" class="secondary" type="button">📋 コードをコピー</button>
-    </div>
-    <label for="turnServers">TURNサーバー設定（任意・JSON配列）</label>
-    <textarea id="turnServers" placeholder='[{"urls":"turn:example.com:3478","username":"ユーザー名","credential":"パスワード"}]'></textarea>
-    <p class="hint">STUNだけで接続できないネットワークではTURNが必要です。TURNを使う場合は、利用契約のあるサーバー情報をここへ入力してください。認証情報はこのiPad内に保存し、GitHubには登録しません。</p>
-    <div class="row">
-      <button id="connect" type="button">▶ 接続して受信</button>
-      <button id="stop" class="danger" type="button">■ 切断</button>
-    </div>
-    <p id="status" role="status">待機中</p>
-  </section>
-
-  <section class="card">
-    <h2>受信映像・音声</h2>
-    <video id="remoteVideo" autoplay playsinline controls></video>
-    <button id="enableAudio" class="secondary" type="button">🔊 音声を再生</button>
-    <p class="hint">iPadの消音スイッチ・音量・Safariの自動再生制限により、最初に音声ボタンを押す必要がある場合があります。</p>
-  </section>
-
-  <section class="card">
-    <h2>接続手順</h2>
-    <p class="hint">1. GASをデプロイしてURLを入力します。<br>2. 接続コードを作り、Androidアプリにも同じ12桁を入力します。<br>3. Androidで「配信開始」を押し、通知に「カメラ・マイク使用中」と表示された状態にします。<br>4. iPadで「接続して受信」を押します。<br>5. 画面をロックする場合も、Androidの配信通知を残してください。</p>
-    <p class="hint">このコードは個人利用向けの試作です。接続コードを他人に共有しないでください。Androidが停止・再起動された場合は、アプリを開いて配信を再開する必要があります。</p>
-  </section>
-
+<h1>📷 WebRTC Camera Link</h1>
+<p class="lead">AndroidとiPadの両方で同じページを使います。映像・音声はWebRTCで端末間に直接送信します。GAS・APKは不要です。</p>
+<section class="card">
+<h2>① 使い方を選択</h2>
+<div class="row">
+<button id="senderMode" type="button">📱 Android：配信する</button>
+<button id="receiverMode" class="secondary" type="button">🖥️ iPad：受信する</button>
+</div>
+<p id="status" class="status" role="status" aria-live="polite">モードを選んでください</p>
+</section>
+<section id="senderPanel" class="card hidden">
+<h2>📱 Android側（配信）</h2>
+<p class="hint">配信開始を押すと、この端末のカメラ・マイクを使用します。表示された接続IDをiPad側へ入力してください。</p>
+<button id="startStream" type="button">▶ カメラ・マイクを開始</button>
+<button id="stopStream" class="danger" type="button" disabled>■ 配信を停止</button>
+<label>iPadに入力する接続ID</label>
+<div id="peerId" class="code">まだ発行されていません</div>
+<button id="copyPeerId" class="secondary" type="button" disabled>📋 接続IDをコピー</button>
+<video id="localVideo" autoplay playsinline muted></video>
+<p class="hint">自分の映像確認用です。カメラを使っている間はこのページを開いたままにしてください。</p>
+</section>
+<section id="receiverPanel" class="card hidden">
+<h2>🖥️ iPad側（受信）</h2>
+<label for="remotePeerId">Androidに表示された接続ID</label>
+<input id="remotePeerId" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Androidの接続IDを入力">
+<div class="row">
+<button id="connect" type="button">🔗 接続する</button>
+<button id="disconnect" class="danger" type="button" disabled>切断</button>
+</div>
+<video id="remoteVideo" autoplay playsinline controls></video>
+<button id="playAudio" class="secondary" type="button">🔊 音声を再生</button>
+<p class="hint">iPadでは最初に音声再生ボタンを押す必要がある場合があります。</p>
+</section>
+<section class="card">
+<h2>⚠️ 画面ロック・バックグラウンドについて</h2>
+<p class="notice">AndroidのPWAでは、画面をロックしたり別アプリへ移動したりすると、Chromeがカメラ・マイクや通信を停止する場合があります。Webページだけで画面オフ中の連続取得を保証することはできません。</p>
+<p class="hint">安定性を優先する場合は、配信中は画面を点灯したままにしてください。画面オフでも継続するかはGalaxy A22実機で確認が必要です。遠隔からロック画面上で新しくカメラ・マイクを起動することはできません。</p>
+</section>
+<section class="card">
+<h2>📲 ホーム画面に追加</h2>
+<p class="hint"><b>Android（Chrome）</b>：このページを開く → 右上の ⋮ →「ホーム画面に追加」または「アプリをインストール」。<br><b>iPad（Safari）</b>：共有ボタン →「ホーム画面に追加」。</p>
+<p class="hint">初回はHTTPSで開き、カメラ・マイクの許可を求められたら内容を確認して許可してください。</p>
+</section>
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
-(function(){
-  const $ = (id) => document.getElementById(id);
-  const gasInput = $("gasUrl");
-  const roomInput = $("room");
-  const turnInput = $("turnServers");
-  const status = $("status");
-  const video = $("remoteVideo");
-  let pc = null;
-  let afterId = 0;
-  let pollTimer = null;
-  let polling = false;
-  let postQueue = Promise.resolve();
-  let remoteCandidates = [];
-  let live = false;
-  let pollScript = null;
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const status = $("status");
+const senderPanel = $("senderPanel");
+const receiverPanel = $("receiverPanel");
+const localVideo = $("localVideo");
+const remoteVideo = $("remoteVideo");
+let peer = null;
+let localStream = null;
+let incomingCall = null;
+let outgoingCall = null;
+let activeMode = "";
 
-  gasInput.value = localStorage.getItem("a22_gas_url") || "";
-  turnInput.value = localStorage.getItem("a22_turn_servers") || "";
-  roomInput.value = localStorage.getItem("a22_room") || "";
-
-  function setStatus(message){ status.textContent = message; }
-  function validGasUrl(value){
-    return value.startsWith("https://script.google.com/macros/s/") && value.endsWith("/exec");
-  }
-  function validRoom(value){ return /^[0-9]{12}$/.test(value); }
-  function makeRoom(){
-    const bytes = new Uint8Array(12);
-    crypto.getRandomValues(bytes);
-    let result = "";
-    for (const b of bytes) result += String(b % 10);
-    roomInput.value = result;
-    localStorage.setItem("a22_room", result);
-  }
-  $("newCode").addEventListener("click", makeRoom);
-  $("copyCode").addEventListener("click", async function(){
-    if (!roomInput.value) return setStatus("先に接続コードを作成してください");
-    try { await navigator.clipboard.writeText(roomInput.value); setStatus("接続コードをコピーしました"); }
-    catch(e){ setStatus("コピーできません。コードを手動で控えてください"); }
-  });
-
-  function sendSignal(type, data){
-    const payload = {room:roomInput.value, from:"ipad", type:type, data:data};
-    postQueue = postQueue.then(function(){
-      return fetch(gasInput.value, {
-        method:"POST",
-        mode:"no-cors",
-        headers:{"Content-Type":"text/plain;charset=UTF-8"},
-        body:JSON.stringify(payload)
-      });
-    }).catch(function(error){ setStatus("GAS送信エラー: " + error.message); });
-    return postQueue;
-  }
-
-  function pollOnce(){
-    if (!live || polling) return;
-    polling = true;
-    const query = new URLSearchParams({
-      action:"poll", room:roomInput.value, after:String(afterId),
-      from:"ipad", callback:"signalResult"
+function setStatus(message){ status.textContent = message; }
+function showMode(mode){
+  activeMode = mode;
+  senderPanel.classList.toggle("hidden", mode !== "sender");
+  receiverPanel.classList.toggle("hidden", mode !== "receiver");
+  setStatus(mode === "sender" ? "配信モードです。開始ボタンを押してください" : "受信モードです。Androidの接続IDを入力してください");
+}
+function closePeer(){
+  if(incomingCall){ try{incomingCall.close();}catch(_){} incomingCall=null; }
+  if(outgoingCall){ try{outgoingCall.close();}catch(_){} outgoingCall=null; }
+  if(peer){ try{peer.destroy();}catch(_){} peer=null; }
+}
+function stopSender(){
+  closePeer();
+  if(localStream){ localStream.getTracks().forEach(track=>track.stop()); localStream=null; }
+  localVideo.srcObject=null;
+  $("peerId").textContent="まだ発行されていません";
+  $("startStream").disabled=false;
+  $("stopStream").disabled=true;
+  $("copyPeerId").disabled=true;
+}
+function stopReceiver(){
+  closePeer();
+  remoteVideo.srcObject=null;
+  $("connect").disabled=false;
+  $("disconnect").disabled=true;
+}
+function peerError(error){
+  const messages={
+    "browser-incompatible":"このブラウザはWebRTCに対応していません",
+    "network":"PeerJSシグナリングサーバーへ接続できません。通信状態を確認してください",
+    "peer-unavailable":"Androidが見つかりません。IDと配信状態を確認してください",
+    "unavailable-id":"接続IDを発行できませんでした。もう一度お試しください",
+    "webrtc":"WebRTC接続に失敗しました。別ネットワークまたはTURNが必要な場合があります"
+  };
+  setStatus("エラー："+(messages[error.type] || error.message || error.type));
+}
+async function startSender(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){setStatus("カメラを利用できません。HTTPSのChromeで開いてください");return;}
+  $("startStream").disabled=true;
+  setStatus("カメラ・マイクの許可を待っています…");
+  try{
+    localStream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
+      video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}}
     });
-    const script = document.createElement("script");
-    pollScript = script;
-    window.signalResult = function(result){
-      polling = false;
-      script.remove();
-      if (!result || result.error){ setStatus("GAS応答エラー"); return; }
-      afterId = Math.max(afterId, Number(result.next || afterId));
-      const messages = Array.isArray(result.messages) ? result.messages : [];
-      messages.reduce(function(chain, message){
-        return chain.then(function(){ return processSignal(message); });
-      }, Promise.resolve()).finally(function(){
-        if (live) pollTimer = setTimeout(pollOnce, 1200);
+    localVideo.srcObject=localStream;
+    peer=new Peer(undefined,{debug:1});
+    peer.on("open", id=>{
+      $("peerId").textContent=id;
+      $("copyPeerId").disabled=false;
+      $("stopStream").disabled=false;
+      setStatus("✅ 配信準備完了。接続IDをiPadへ入力してください");
+    });
+    peer.on("call", call=>{
+      if(!localStream){call.close();return;}
+      if(incomingCall){incomingCall.close();}
+      incomingCall=call;
+      setStatus("iPadから接続要求。映像・音声を送信します");
+      call.answer(localStream);
+      call.on("close",()=>{if(incomingCall===call)incomingCall=null;setStatus("iPadとの接続が終了しました。配信待機中");});
+      call.on("error",peerError);
+      setStatus("📡 iPadへ映像・音声を送信中");
+    });
+    peer.on("error",peerError);
+    peer.on("disconnected",()=>setStatus("シグナリング接続が切れました。配信を再起動してください"));
+    peer.on("close",()=>setStatus("配信接続が終了しました"));
+  }catch(error){
+    stopSender();
+    let msg=error.name==="NotAllowedError"?"カメラ・マイクの許可が拒否されました。ブラウザ設定を確認してください":
+      error.name==="NotFoundError"?"カメラまたはマイクが見つかりません":
+      error.name==="NotReadableError"?"カメラが他のアプリで使用中か、端末が利用を拒否しています":
+      (error.message||String(error));
+    setStatus("開始できません："+msg);
+  }
+}
+async function connectReceiver(){
+  const id=$("remotePeerId").value.trim();
+  if(!id){setStatus("Androidの接続IDを入力してください");return;}
+  if(typeof Peer==="undefined"){setStatus("PeerJSを読み込めません。ページを再読み込みしてください");return;}
+  $("connect").disabled=true;
+  setStatus("接続サーバーへ接続中…");
+  try{
+    peer=new Peer(undefined,{debug:1});
+    peer.on("open",()=>{
+      setStatus("Androidへ接続要求を送信中…");
+      outgoingCall=peer.call(id,undefined);
+      if(!outgoingCall){setStatus("接続要求を作成できませんでした");$("connect").disabled=false;return;}
+      outgoingCall.on("stream",stream=>{
+        remoteVideo.srcObject=stream;
+        remoteVideo.play().catch(()=>setStatus("映像を受信中です。音声再生ボタンを押してください"));
+        $("disconnect").disabled=false;
+        setStatus("✅ 接続しました。映像・音声を受信中");
       });
-    };
-    script.onerror = function(){
-      polling = false;
-      script.remove();
-      if (live){ setStatus("GASに接続できません。URLやデプロイ設定を確認してください"); pollTimer = setTimeout(pollOnce, 3000); }
-    };
-    script.src = gasInput.value + "?"+ query.toString();
-    document.body.appendChild(script);
-  }
-
-  async function processSignal(message){
-    if (!pc || !message || message.from === "ipad") return;
-    if (message.type === "answer"){
-      await pc.setRemoteDescription(new RTCSessionDescription(message.data));
-      for (const candidate of remoteCandidates) await pc.addIceCandidate(candidate);
-      remoteCandidates = [];
-      setStatus("回答を受信。WebRTC接続を確立中…");
-    } else if (message.type === "candidate"){
-      const candidate = new RTCIceCandidate(message.data);
-      if (pc.remoteDescription) await pc.addIceCandidate(candidate);
-      else remoteCandidates.push(candidate);
-    } else if (message.type === "hangup"){
-      stopConnection(false);
-      setStatus("Android側から切断されました");
-    }
-  }
-
-  async function startConnection(){
-    const gas = gasInput.value.trim();
-    const room = roomInput.value.trim();
-    if (!validGasUrl(gas)) return setStatus("GASの /exec URLを入力してください");
-    if (!validRoom(room)) return setStatus("12桁の接続コードを入力してください");
-    let turnServers = [];
-    try {
-      const raw = turnInput.value.trim();
-      if (raw) {
-        turnServers = JSON.parse(raw);
-        if (!Array.isArray(turnServers)) throw new Error("配列ではありません");
-      }
-    } catch(error){ return setStatus("TURN設定JSONを確認してください: " + error.message); }
-
-    localStorage.setItem("a22_gas_url", gas);
-    localStorage.setItem("a22_room", room);
-    localStorage.setItem("a22_turn_servers", turnInput.value);
-    stopConnection(false);
-    afterId = 0;
-    remoteCandidates = [];
-    live = true;
-    const iceServers = [
-      {urls:"stun:stun.l.google.com:19302"},
-      {urls:"stun:stun1.l.google.com:19302"},
-      {urls:"stun:stun.cloudflare.com:3478"}
-    ].concat(turnServers);
-    pc = new RTCPeerConnection({iceServers:iceServers, iceTransportPolicy:"all"});
-    pc.addTransceiver("video", {direction:"recvonly"});
-    pc.addTransceiver("audio", {direction:"recvonly"});
-    pc.ontrack = function(event){
-      if (event.streams && event.streams[0]) video.srcObject = event.streams[0];
-      video.play().catch(function(){ setStatus("映像を受信中。音声ボタンを押してください"); });
-    };
-    pc.onicecandidate = function(event){
-      if (event.candidate) sendSignal("candidate", event.candidate.toJSON());
-    };
-    pc.onconnectionstatechange = function(){
-      if (!pc) return;
-      const state = pc.connectionState;
-      if (state === "connected") setStatus("✅ 接続しました。映像・音声を受信中");
-      else if (state === "failed") setStatus("ICE接続失敗。TURNサーバー設定が必要な可能性があります");
-      else if (state === "disconnected") setStatus("接続が一時切断されました。再接続を待機中…");
-      else if (state === "connecting") setStatus("WebRTC接続中…");
-    };
-    setStatus("接続情報を送信中…");
-    try {
-      await sendSignal("iceconfig", iceServers);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await sendSignal("offer", {type:offer.type, sdp:offer.sdp});
-      pollOnce();
-      setStatus("Androidからの応答を待っています。Android側で配信を開始してください");
-    } catch(error){
-      setStatus("接続準備に失敗: " + error.message);
-      stopConnection(false);
-    }
-  }
-
-  function stopConnection(sendHangup){
-    live = false;
-    if (pollTimer) clearTimeout(pollTimer);
-    pollTimer = null;
-    polling = false;
-    if (pollScript) pollScript.remove();
-    pollScript = null;
-    if (sendHangup && validRoom(roomInput.value) && validGasUrl(gasInput.value)) sendSignal("hangup", {});
-    if (pc){ pc.ontrack = null; pc.onicecandidate = null; pc.close(); pc = null; }
-    video.srcObject = null;
-  }
-
-  $("connect").addEventListener("click", startConnection);
-  $("stop").addEventListener("click", function(){ stopConnection(true); setStatus("切断しました"); });
-  $("enableAudio").addEventListener("click", function(){
-    video.muted = false;
-    video.play().then(function(){ setStatus("音声を再生しています"); }).catch(function(){ setStatus("再生できません。iPadの消音設定と音量を確認してください"); });
-  });
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(function(){});
-  if (!window.isSecureContext) setStatus("HTTPSで開いてください（GitHub PagesはHTTPSです）");
+      outgoingCall.on("close",()=>{remoteVideo.srcObject=null;$("disconnect").disabled=true;setStatus("接続が終了しました");});
+      outgoingCall.on("error",peerError);
+    });
+    peer.on("error",error=>{peerError(error);$("connect").disabled=false;});
+    peer.on("disconnected",()=>setStatus("シグナリング接続が切れました"));
+  }catch(error){$("connect").disabled=false;setStatus("接続エラー："+error.message);}
+}
+$("senderMode").addEventListener("click",()=>showMode("sender"));
+$("receiverMode").addEventListener("click",()=>showMode("receiver"));
+$("startStream").addEventListener("click",startSender);
+$("stopStream").addEventListener("click",()=>{stopSender();setStatus("配信を停止しました");});
+$("copyPeerId").addEventListener("click",async()=>{
+  try{await navigator.clipboard.writeText($("peerId").textContent);setStatus("接続IDをコピーしました");}
+  catch(_){setStatus("コピーできません。接続IDを長押ししてコピーしてください");}
+});
+$("connect").addEventListener("click",connectReceiver);
+$("disconnect").addEventListener("click",()=>{stopReceiver();setStatus("切断しました");});
+$("playAudio").addEventListener("click",()=>{
+  remoteVideo.muted=false;
+  remoteVideo.play().then(()=>setStatus("音声を再生しています")).catch(()=>setStatus("再生できません。音量・消音設定を確認してください"));
+});
+window.addEventListener("pagehide",()=>{
+  // Explicitly release media when the page is closed; background capture is not promised.
+  if(activeMode==="sender") stopSender();
+  else if(activeMode==="receiver") stopReceiver();
+});
+if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(()=>{});
+if(!window.isSecureContext)setStatus("HTTPSで開いてください。GitHub PagesはHTTPSに対応しています");
 })();
 </script>
 </body>
