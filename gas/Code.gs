@@ -76,7 +76,7 @@ function doPost(e) {
 
 function validRoom_(value) {
   const room = String(value || "");
-  return /^[0-9]{12}$/.test(room) ? room : "";
+  return /^[0-9]{6}$/.test(room) ? room : "";
 }
 
 function output_(value) {
