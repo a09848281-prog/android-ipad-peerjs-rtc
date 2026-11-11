@@ -130,24 +130,37 @@ public class MainActivity extends Activity {
         startStreaming(gas, room);
     }
 
+    private boolean hasRequiredPermissions() {
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false;
+        return Build.VERSION.SDK_INT < 33 ||
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void startStreaming(String gas, String room) {
+        if (!hasRequiredPermissions()) {
+            statusView.setText("カメラ・マイク・通知の権限が必要です。設定を確認してください。");
+            return;
+        }
         Intent intent = new Intent(this, StreamService.class);
         intent.putExtra(StreamService.EXTRA_GAS_URL, gas);
         intent.putExtra(StreamService.EXTRA_ROOM, room);
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
-        else startService(intent);
-        statusView.setText("配信サービスを開始しました。画面をロックしても通知を消さないでください。");
+        try {
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
+            else startService(intent);
+            statusView.setText("配信サービスを開始しました。通知から停止できます。");
+        } catch (SecurityException | IllegalStateException error) {
+            statusView.setText("配信を開始できませんでした。権限・通知設定・他アプリのカメラ使用を確認してください。");
+        }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != REQUEST_PERMISSIONS) return;
-        for (int result : grantResults) {
-            if (result != PackageManager.PERMISSION_GRANTED) {
-                statusView.setText("必要な権限が許可されていません。設定からカメラ・マイク・通知を許可してください。");
-                return;
-            }
+        if (!hasRequiredPermissions()) {
+            statusView.setText("必要な権限が許可されていません。設定からカメラ・マイク・通知を許可してください。");
+            return;
         }
         startStreaming(gasInput.getText().toString().trim(), roomInput.getText().toString().trim());
     }
