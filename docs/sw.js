@@ -1,4 +1,4 @@
-const CACHE_NAME = "webrtc-camera-link-v2";
+const CACHE_NAME = "a22-camera-link-v3";
 const APP_FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", event => {
