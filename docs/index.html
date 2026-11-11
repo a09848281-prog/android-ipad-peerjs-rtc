@@ -4,198 +4,155 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#101827">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="description" content="AndroidとiPadで使えるWebRTCカメラ・マイク共有PWA">
+<meta name="description" content="iPadでAndroidのカメラ・マイク映像を受信するWebRTCアプリ">
 <link rel="manifest" href="./manifest.webmanifest">
-<title>WebRTC Camera Link</title>
+<title>A22 Camera Link - iPad Receiver</title>
 <style>
-:root{color-scheme:dark;font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;background:#0b1220;color:#eef2ff}
-*{box-sizing:border-box}body{margin:0;padding:18px;max-width:760px;margin-inline:auto}
-h1{font-size:1.55rem;margin:4px 0 8px}.lead,.hint{color:#aab6ce;line-height:1.6}
+:root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif;background:#0b1220;color:#eef2ff}
+*{box-sizing:border-box}body{margin:0;padding:18px;max-width:720px;margin-inline:auto}
+h1{font-size:1.5rem;margin:4px 0 8px}.lead,.hint{color:#aab6ce;line-height:1.6}
 .card{background:#151f32;border:1px solid #2b3952;border-radius:16px;padding:16px;margin:14px 0}
 label{display:block;font-weight:700;margin:12px 0 6px}
 input{width:100%;padding:13px;border:1px solid #465775;border-radius:10px;background:#0d1728;color:#fff;font:inherit}
 button{border:0;border-radius:11px;padding:13px 16px;font:inherit;font-weight:700;background:#3478e5;color:white;margin:7px 5px 0 0}
 button.secondary{background:#34445f}button.danger{background:#b93848}button:disabled{opacity:.5}
-.row{display:flex;gap:8px;flex-wrap:wrap}.row button{flex:1}
 .status{font-weight:700;color:#93c5fd;min-height:1.5em;overflow-wrap:anywhere}
 video{width:100%;max-height:58vh;background:#020617;border-radius:12px;object-fit:contain}
-.hidden{display:none!important}.code{font-size:1.2rem;letter-spacing:.08em;font-weight:800;overflow-wrap:anywhere;color:#bfdbfe}
+.code{font-size:1.2rem;letter-spacing:.08em;font-weight:800;overflow-wrap:anywhere;color:#bfdbfe}
 .notice{border-left:4px solid #e5a33b;padding:10px 12px;background:#2b261c;border-radius:8px;color:#f8dfb2;line-height:1.55}
 </style>
 </head>
 <body>
-<h1>📷 WebRTC Camera Link</h1>
-<p class="lead">AndroidとiPadの両方で同じページを使います。iPadが受信IDを発行し、AndroidがそのIDへカメラ・マイクを送信します。GAS・APKは不要です。</p>
+<h1>📷 A22 Camera Link</h1>
+<p class="lead">Androidアプリ（Java）からカメラ・マイクを受信するiPad用ページです。GASは接続情報の交換だけに使用し、映像・音声はWebRTCで端末間に直接送ります。</p>
 <section class="card">
-<h2>① 使い方を選択</h2>
-<div class="row">
-<button id="senderMode" type="button">📱 Android：配信する</button>
-<button id="receiverMode" class="secondary" type="button">🖥️ iPad：受信する</button>
-</div>
-<p id="status" class="status" role="status" aria-live="polite">モードを選んでください</p>
-</section>
-<section id="senderPanel" class="card hidden">
-<h2>📱 Android側（配信）</h2>
-<p class="hint">先にiPad側で受信IDを発行してください。そのIDを入力してから配信を開始します。</p>
-<label for="receiverPeerId">iPadに表示された受信ID</label>
-<input id="receiverPeerId" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="iPadの受信IDを入力">
-<button id="startStream" type="button">▶ カメラ・マイクを開始して送信</button>
-<button id="stopStream" class="danger" type="button" disabled>■ 配信を停止</button>
-<video id="localVideo" autoplay playsinline muted></video>
-<p class="hint">カメラ・マイクの許可後、iPadへ接続します。</p>
-</section>
-<section id="receiverPanel" class="card hidden">
-<h2>🖥️ iPad側（受信）</h2>
-<p class="hint">「受信IDを発行」を押して、表示されたIDをAndroid側へ伝えてください。</p>
-<button id="createReceiver" type="button">🔑 受信IDを発行</button>
-<div id="peerId" class="code">まだ発行されていません</div>
-<button id="copyPeerId" class="secondary" type="button" disabled>📋 受信IDをコピー</button>
-<button id="disconnect" class="danger" type="button" disabled>切断</button>
-<video id="remoteVideo" autoplay playsinline controls></video>
-<button id="playAudio" class="secondary" type="button">🔊 音声を再生</button>
-<p class="hint">iPadでは最初に音声再生ボタンを押す必要がある場合があります。</p>
+<h2>① 接続設定</h2>
+<label for="gasUrl">GAS WebアプリURL（/execまで）</label>
+<input id="gasUrl" type="url" autocomplete="url" placeholder="https://script.google.com/macros/s/.../exec">
+<label for="room">接続コード（Androidと同じ12桁）</label>
+<input id="room" inputmode="numeric" maxlength="12" placeholder="例：123456789012">
+<button id="save" type="button">設定を保存</button>
+<p class="hint">GASは「ウェブアプリ」としてデプロイし、アクセスできるユーザーをAndroid・iPadの両方から利用可能にしてください。</p>
 </section>
 <section class="card">
-<h2>⚠️ 画面ロック・バックグラウンドについて</h2>
-<p class="notice">AndroidのPWAでは、画面をロックしたり別アプリへ移動したりすると、Chromeがカメラ・マイクや通信を停止する場合があります。Webページだけで画面オフ中の連続取得を保証することはできません。</p>
-<p class="hint">安定性を優先する場合は、配信中は画面を点灯したままにしてください。画面オフでも継続するかはGalaxy A22実機で確認が必要です。遠隔からロック画面上で新しくカメラ・マイクを起動することはできません。</p>
+<h2>② 受信開始</h2>
+<button id="start" type="button">▶ Androidからの映像を受信</button>
+<button id="stop" class="danger" type="button" disabled>■ 切断</button>
+<p id="status" class="status" role="status" aria-live="polite">接続設定を入力してください</p>
+<video id="remote" autoplay playsinline controls></video>
+<button id="play" class="secondary" type="button">🔊 音声を再生</button>
+</section>
+<section class="card">
+<h2>⚠️ 大切な注意</h2>
+<p class="notice">Android側はアプリを開いて配信開始を押す必要があります。ロック画面から無断でカメラ・マイクを新規起動する機能ではありません。配信中はAndroidに常時通知が表示されます。</p>
+<p class="hint">STUNだけで接続できないネットワークではTURNサーバーが必要になる場合があります。実機での接続確認はまだ行っていません。</p>
 </section>
 <section class="card">
 <h2>📲 ホーム画面に追加</h2>
-<p class="hint"><b>Android（Chrome）</b>：このページを開く → 右上の ⋮ →「ホーム画面に追加」または「アプリをインストール」。<br><b>iPad（Safari）</b>：共有ボタン →「ホーム画面に追加」。</p>
-<p class="hint">初回はHTTPSで開き、カメラ・マイクの許可を求められたら内容を確認して許可してください。</p>
+<p class="hint">iPadのSafariで開き、共有ボタン →「ホーム画面に追加」を選択してください。</p>
 </section>
-<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
 (() => {
 "use strict";
-const $ = id => document.getElementById(id);
-const status = $("status");
-const senderPanel = $("senderPanel");
-const receiverPanel = $("receiverPanel");
-const localVideo = $("localVideo");
-const remoteVideo = $("remoteVideo");
-let peer = null;
-let localStream = null;
-let mediaCall = null;
-let activeMode = "";
-
-function setStatus(message){status.textContent=message;}
-function showMode(mode){
-  activeMode=mode;
-  senderPanel.classList.toggle("hidden",mode!=="sender");
-  receiverPanel.classList.toggle("hidden",mode!=="receiver");
-  setStatus(mode==="sender"?"Android配信モードです。iPadの受信IDを入力してください":"iPad受信モードです。受信IDを発行してください");
+const $=id=>document.getElementById(id);
+const status=$("status"),remote=$("remote");
+let pc=null,timer=null,room="",gasUrl="",lastId=0,pollBusy=false,closing=false;
+let pendingCandidates=[];
+const STUN=[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}];
+function setStatus(s){status.textContent=s;}
+function validSettings(){
+ gasUrl=$("gasUrl").value.trim();room=$("room").value.trim();
+ if(!/^https:\/\/script\.google\.com\/macros\/s\/[^\s]+\/exec$/.test(gasUrl)){setStatus("GASの/exec URLを正しく入力してください");return false;}
+ if(!/^\d{12}$/.test(room)){setStatus("接続コードは12桁の数字です");return false;}
+ localStorage.setItem("a22_gas_url",gasUrl);localStorage.setItem("a22_room",room);return true;
 }
-function closePeer(){
-  if(mediaCall){try{mediaCall.close();}catch(_){}mediaCall=null;}
-  if(peer){try{peer.destroy();}catch(_){}peer=null;}
+function jsonp(params){
+ return new Promise((resolve,reject)=>{
+  const cb="a22cb_"+Date.now()+"_"+Math.floor(Math.random()*100000);
+  const script=document.createElement("script");
+  const timeout=setTimeout(()=>finish(new Error("GAS応答タイムアウト")),15000);
+  function finish(err,data){clearTimeout(timeout);delete window[cb];script.remove();err?reject(err):resolve(data);}
+  window[cb]=data=>finish(null,data);
+  script.onerror=()=>finish(new Error("GASに接続できません。URL・公開設定を確認してください"));
+  const q=new URLSearchParams({...params,callback:cb});
+  script.src=gasUrl+"?"+q.toString();document.head.appendChild(script);
+ });
 }
-function stopSender(){
-  closePeer();
-  if(localStream){localStream.getTracks().forEach(track=>track.stop());localStream=null;}
-  localVideo.srcObject=null;
-  $("startStream").disabled=false;
-  $("stopStream").disabled=true;
+async function postSignal(type,data){
+ const body=JSON.stringify({room,from:"ipad",type,data});
+ await fetch(gasUrl,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body});
 }
-function stopReceiver(){
-  closePeer();
-  remoteVideo.srcObject=null;
-  $("createReceiver").disabled=false;
-  $("copyPeerId").disabled=true;
-  $("peerId").textContent="まだ発行されていません";
-  $("disconnect").disabled=true;
-}
-function peerError(error){
-  const messages={
-    "browser-incompatible":"このブラウザはWebRTCに対応していません",
-    "network":"PeerJS接続サーバーへ接続できません。通信状態を確認してください",
-    "peer-unavailable":"iPadが見つかりません。受信IDとiPad側の待機状態を確認してください",
-    "unavailable-id":"受信IDを発行できませんでした。もう一度お試しください",
-    "webrtc":"WebRTC接続に失敗しました。ネットワーク環境を確認してください"
-  };
-  setStatus("エラー："+(messages[error.type]||error.message||error.type));
-}
-async function startSender(){
-  const receiverId=$("receiverPeerId").value.trim();
-  if(!receiverId){setStatus("先にiPadの受信IDを入力してください");return;}
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setStatus("カメラを利用できません。HTTPSのChromeで開いてください");return;}
-  $("startStream").disabled=true;
-  setStatus("カメラ・マイクの許可を待っています…");
-  try{
-    localStream=await navigator.mediaDevices.getUserMedia({
-      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
-      video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}}
-    });
-    localVideo.srcObject=localStream;
-    peer=new Peer(undefined,{debug:1});
-    peer.on("open",()=>{
-      setStatus("iPadへ接続要求を送信中…");
-      mediaCall=peer.call(receiverId,localStream);
-      if(!mediaCall){setStatus("接続要求を作成できませんでした");stopSender();return;}
-      mediaCall.on("stream",()=>{});
-      mediaCall.on("close",()=>setStatus("iPadとの接続が終了しました"));
-      mediaCall.on("error",peerError);
-      $("stopStream").disabled=false;
-      setStatus("📡 iPadへ映像・音声を送信中");
-    });
-    peer.on("error",error=>{peerError(error);$("startStream").disabled=false;});
-    peer.on("disconnected",()=>setStatus("接続サーバーとの通信が切れました"));
-  }catch(error){
-    stopSender();
-    const msg=error.name==="NotAllowedError"?"カメラ・マイクの許可が拒否されました。ブラウザ設定を確認してください":
-      error.name==="NotFoundError"?"カメラまたはマイクが見つかりません":
-      error.name==="NotReadableError"?"カメラが他のアプリで使用中か、端末が利用を拒否しています":(error.message||String(error));
-    setStatus("開始できません："+msg);
+async function poll(){
+ if(!pc||closing||pollBusy)return;
+ pollBusy=true;
+ try{
+  const result=await jsonp({action:"poll",room,after:String(lastId),from:"ipad"});
+  if(result&&Array.isArray(result.messages)){
+   for(const msg of result.messages){lastId=Math.max(lastId,Number(msg.id)||0);await handleMessage(msg);}
   }
+  if(result&&Number.isFinite(Number(result.next)))lastId=Math.max(lastId,Number(result.next));
+ }catch(e){setStatus("シグナリング再接続中："+e.message);}
+ finally{pollBusy=false;}
 }
-function createReceiver(){
-  if(typeof Peer==="undefined"){setStatus("PeerJSを読み込めません。ページを再読み込みしてください");return;}
-  $("createReceiver").disabled=true;
-  setStatus("受信IDを発行中…");
-  try{
-    peer=new Peer(undefined,{debug:1});
-    peer.on("open",id=>{
-      $("peerId").textContent=id;
-      $("copyPeerId").disabled=false;
-      setStatus("✅ 受信待機中。IDをAndroid側へ入力してください");
-    });
-    peer.on("call",call=>{
-      if(mediaCall){call.close();return;}
-      mediaCall=call;
-      setStatus("Androidから接続。映像・音声を受信しています…");
-      call.answer();
-      call.on("stream",stream=>{
-        remoteVideo.srcObject=stream;
-        remoteVideo.play().catch(()=>setStatus("映像を受信中です。音声再生ボタンを押してください"));
-        $("disconnect").disabled=false;
-        setStatus("✅ 接続しました。映像・音声を受信中");
-      });
-      call.on("close",()=>{remoteVideo.srcObject=null;mediaCall=null;$("disconnect").disabled=true;setStatus("Androidとの接続が終了しました");});
-      call.on("error",peerError);
-    });
-    peer.on("error",error=>{peerError(error);$("createReceiver").disabled=false;});
-    peer.on("disconnected",()=>setStatus("接続サーバーとの通信が切れました"));
-  }catch(error){$("createReceiver").disabled=false;setStatus("受信ID発行エラー："+error.message);}
+async function handleMessage(msg){
+ if(!pc||closing)return;
+ try{
+  if(msg.type==="answer"){
+   const data=typeof msg.data==="string"?JSON.parse(msg.data):msg.data;
+   await pc.setRemoteDescription({type:"answer",sdp:data.sdp});
+   for(const c of pendingCandidates){try{await pc.addIceCandidate(c);}catch(_){}}
+   pendingCandidates=[];setStatus("Androidの応答を受信。接続を確立しています…");
+  }else if(msg.type==="candidate"){
+   const d=typeof msg.data==="string"?JSON.parse(msg.data):msg.data;
+   const c={candidate:d.candidate,sdpMid:d.sdpMid,sdpMLineIndex:d.sdpMLineIndex};
+   if(pc.remoteDescription)await pc.addIceCandidate(c);else pendingCandidates.push(c);
+  }else if(msg.type==="hangup"){
+   stop();setStatus("Android側から切断されました");
+  }
+ }catch(e){setStatus("通信データ処理エラー："+e.message);}
 }
-$("senderMode").addEventListener("click",()=>showMode("sender"));
-$("receiverMode").addEventListener("click",()=>showMode("receiver"));
-$("startStream").addEventListener("click",startSender);
-$("stopStream").addEventListener("click",()=>{stopSender();setStatus("配信を停止しました");});
-$("createReceiver").addEventListener("click",createReceiver);
-$("copyPeerId").addEventListener("click",async()=>{
-  try{await navigator.clipboard.writeText($("peerId").textContent);setStatus("受信IDをコピーしました");}
-  catch(_){setStatus("コピーできません。受信IDを長押ししてコピーしてください");}
-});
-$("disconnect").addEventListener("click",()=>{stopReceiver();setStatus("切断しました");});
-$("playAudio").addEventListener("click",()=>{
-  remoteVideo.muted=false;
-  remoteVideo.play().then(()=>setStatus("音声を再生しています")).catch(()=>setStatus("再生できません。音量・消音設定を確認してください"));
-});
+async function start(){
+ if(!validSettings())return;
+ $("start").disabled=true;$("stop").disabled=false;closing=false;lastId=0;pendingCandidates=[];
+ try{
+  pc=new RTCPeerConnection({iceServers:STUN});
+  pc.addTransceiver("video",{direction:"recvonly"});
+  pc.addTransceiver("audio",{direction:"recvonly"});
+  pc.ontrack=e=>{
+   const stream=e.streams&&e.streams[0];
+   if(stream)remote.srcObject=stream;
+   setStatus("📡 Androidから映像・音声を受信しています");
+   remote.play().catch(()=>setStatus("映像を受信中です。音声再生ボタンを押してください"));
+  };
+  pc.onicecandidate=e=>{
+   if(e.candidate)postSignal("candidate",e.candidate.toJSON()).catch(()=>setStatus("ICE情報の送信に失敗しました"));
+  };
+  pc.onconnectionstatechange=()=>{
+   if(!pc)return;
+   if(pc.connectionState==="connected")setStatus("✅ Androidと接続しました");
+   else if(pc.connectionState==="failed")setStatus("接続失敗。ネットワークまたはTURN設定を確認してください");
+   else if(pc.connectionState==="disconnected")setStatus("通信が一時切断されました。再接続を待っています");
+  };
+  const offer=await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await postSignal("offer",{type:offer.type,sdp:offer.sdp});
+  setStatus("Androidからの接続を待っています…");
+  timer=setInterval(poll,1200);
+  await poll();
+ }catch(e){stop();setStatus("開始できません："+e.message);}
+}
+function stop(){
+ closing=true;if(timer){clearInterval(timer);timer=null;}
+ if(pc){try{pc.close();}catch(_){}pc=null;}
+ remote.srcObject=null;pendingCandidates=[];$("start").disabled=false;$("stop").disabled=true;
+}
+$("save").addEventListener("click",()=>{if(validSettings())setStatus("設定を保存しました");});
+$("start").addEventListener("click",start);
+$("stop").addEventListener("click",async()=>{try{await postSignal("hangup",{});}catch(_){}stop();setStatus("切断しました");});
+$("play").addEventListener("click",()=>{remote.muted=false;remote.play().then(()=>setStatus("音声を再生しています")).catch(()=>setStatus("再生できません。音量・消音設定を確認してください"));});
+$("gasUrl").value=localStorage.getItem("a22_gas_url")||"";
+$("room").value=localStorage.getItem("a22_room")||"";
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
-if(!window.isSecureContext)setStatus("HTTPSで開いてください。GitHub PagesはHTTPSに対応しています");
 })();
 </script>
 </body>
