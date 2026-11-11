@@ -101,11 +101,16 @@ public class StreamService extends Service {
         }
 
         Notification notification = buildNotification();
-        if (Build.VERSION.SDK_INT >= 30) {
-            startForeground(NOTIFICATION_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                startForeground(NOTIFICATION_ID, notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+        } catch (SecurityException error) {
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
         if (!running) {
@@ -131,6 +136,7 @@ public class StreamService extends Service {
             PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
             if (manager != null) {
                 wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "A22CameraLink:Streaming");
+                wakeLock.setReferenceCounted(false);
                 wakeLock.acquire();
             }
         } catch (Exception ignored) {
@@ -221,16 +227,20 @@ public class StreamService extends Service {
             try {
                 JSONObject sdpJson = data instanceof JSONObject ? (JSONObject) data : new JSONObject(String.valueOf(data));
                 createPeerConnection();
+                final PeerConnection activeConnection = peerConnection;
                 SessionDescription offer = new SessionDescription(
                         SessionDescription.Type.OFFER, sdpJson.getString("sdp"));
-                peerConnection.setRemoteDescription(new EmptySdpObserver() {
+                activeConnection.setRemoteDescription(new EmptySdpObserver() {
                     @Override public void onSetSuccess() {
+                        if (!running || peerConnection != activeConnection) return;
                         remoteDescriptionReady = true;
                         flushPendingCandidates();
-                        peerConnection.createAnswer(new EmptySdpObserver() {
+                        activeConnection.createAnswer(new EmptySdpObserver() {
                             @Override public void onCreateSuccess(SessionDescription answer) {
-                                peerConnection.setLocalDescription(new EmptySdpObserver() {
+                                if (!running || peerConnection != activeConnection) return;
+                                activeConnection.setLocalDescription(new EmptySdpObserver() {
                                     @Override public void onSetSuccess() {
+                                        if (!running || peerConnection != activeConnection) return;
                                         try {
                                             JSONObject payload = new JSONObject();
                                             payload.put("type", answer.type.canonicalForm());
@@ -239,11 +249,19 @@ public class StreamService extends Service {
                                             updateNotification("iPadへ接続応答を送信しました");
                                         } catch (Exception ignored) { }
                                     }
+                                    @Override public void onSetFailure(String error) {
+                                        updateNotification("Answer設定失敗: " + error);
+                                    }
                                 }, answer);
+                            }
+                            @Override public void onCreateFailure(String error) {
+                                updateNotification("Answer作成失敗: " + error);
                             }
                         }, new MediaConstraints());
                     }
-                    @Override public void onSetFailure(String error) { updateNotification("Offer設定失敗: " + error); }
+                    @Override public void onSetFailure(String error) {
+                        updateNotification("Offer設定失敗: " + error);
+                    }
                 }, offer);
             } catch (Exception error) {
                 updateNotification("Offer処理失敗: " + error.getMessage());
@@ -429,12 +447,16 @@ public class StreamService extends Service {
         PendingIntent stopPending = PendingIntent.getService(this, 7202, stopIntent, pendingFlags);
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+        Intent openIntent = new Intent(this, MainActivity.class);
+        PendingIntent openPending = PendingIntent.getActivity(this, 7203, openIntent, pendingFlags);
         return builder.setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setContentTitle("A22 Camera Link：配信中")
-                .setContentText("カメラ・マイクを使用中。タップしてアプリを開けます")
+                .setContentText("カメラ・マイクを使用中。通知から停止できます")
+                .setContentIntent(openPending)
                 .setOngoing(true)
                 .setCategory(Notification.CATEGORY_SERVICE)
-                .addAction(new Notification.Action.Builder(null, "配信停止", stopPending).build())
+                .addAction(new Notification.Action.Builder(
+                        android.R.drawable.ic_media_pause, "配信停止", stopPending).build())
                 .build();
     }
 
@@ -447,12 +469,16 @@ public class StreamService extends Service {
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent stopPending = PendingIntent.getService(this, 7202, stopIntent, flags);
+        Intent openIntent = new Intent(this, MainActivity.class);
+        PendingIntent openPending = PendingIntent.getActivity(this, 7203, openIntent, flags);
         Notification notification = builder.setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setContentTitle("A22 Camera Link：配信中")
                 .setContentText(text)
+                .setContentIntent(openPending)
                 .setOngoing(true)
                 .setCategory(Notification.CATEGORY_SERVICE)
-                .addAction(new Notification.Action.Builder(null, "配信停止", stopPending).build())
+                .addAction(new Notification.Action.Builder(
+                        android.R.drawable.ic_media_pause, "配信停止", stopPending).build())
                 .build();
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) manager.notify(NOTIFICATION_ID, notification);
@@ -461,24 +487,43 @@ public class StreamService extends Service {
     @Override
     public void onDestroy() {
         running = false;
-        if (worker != null) worker.removeCallbacksAndMessages(null);
-        closePeerConnection();
+        Handler cleanupHandler = worker;
+        HandlerThread cleanupThread = workerThread;
+        if (cleanupHandler != null && cleanupThread != null) {
+            cleanupHandler.removeCallbacksAndMessages(null);
+            cleanupHandler.post(this::releaseResources);
+            cleanupThread.quitSafely();
+        } else {
+            releaseResources();
+        }
+        worker = null;
+        workerThread = null;
+        if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE);
+        else stopForeground(true);
+        super.onDestroy();
+    }
 
+    // Release WebRTC and camera resources on the worker thread so shutdown
+    // cannot race camera initialization or asynchronous SDP callbacks.
+    private void releaseResources() {
+        closePeerConnection();
         if (cameraCapturer != null) {
             try { cameraCapturer.stopCapture(); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+            catch (Exception ignored) { }
             try { cameraCapturer.dispose(); } catch (Exception ignored) { }
             cameraCapturer = null;
         }
-        if (surfaceTextureHelper != null) { surfaceTextureHelper.dispose(); surfaceTextureHelper = null; }
-        if (videoTrack != null) { videoTrack.dispose(); videoTrack = null; }
-        if (audioTrack != null) { audioTrack.dispose(); audioTrack = null; }
-        if (videoSource != null) { videoSource.dispose(); videoSource = null; }
-        if (audioSource != null) { audioSource.dispose(); audioSource = null; }
-        if (factory != null) { factory.dispose(); factory = null; }
-        if (eglBase != null) { eglBase.release(); eglBase = null; }
-        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
-        if (workerThread != null) { workerThread.quitSafely(); workerThread = null; }
-        super.onDestroy();
+        if (surfaceTextureHelper != null) { try { surfaceTextureHelper.dispose(); } catch (Exception ignored) { } surfaceTextureHelper = null; }
+        if (videoTrack != null) { try { videoTrack.dispose(); } catch (Exception ignored) { } videoTrack = null; }
+        if (audioTrack != null) { try { audioTrack.dispose(); } catch (Exception ignored) { } audioTrack = null; }
+        if (videoSource != null) { try { videoSource.dispose(); } catch (Exception ignored) { } videoSource = null; }
+        if (audioSource != null) { try { audioSource.dispose(); } catch (Exception ignored) { } audioSource = null; }
+        if (factory != null) { try { factory.dispose(); } catch (Exception ignored) { } factory = null; }
+        if (eglBase != null) { try { eglBase.release(); } catch (Exception ignored) { } eglBase = null; }
+        if (wakeLock != null) {
+            try { if (wakeLock.isHeld()) wakeLock.release(); } catch (Exception ignored) { }
+            wakeLock = null;
+        }
     }
 
     @Override
