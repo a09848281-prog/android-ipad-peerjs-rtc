@@ -27,7 +27,7 @@ video{width:100%;max-height:58vh;background:#020617;border-radius:12px;object-fi
 </head>
 <body>
 <h1>📷 WebRTC Camera Link</h1>
-<p class="lead">AndroidとiPadの両方で同じページを使います。映像・音声はWebRTCで端末間に直接送信します。GAS・APKは不要です。</p>
+<p class="lead">AndroidとiPadの両方で同じページを使います。iPadが受信IDを発行し、AndroidがそのIDへカメラ・マイクを送信します。GAS・APKは不要です。</p>
 <section class="card">
 <h2>① 使い方を選択</h2>
 <div class="row">
@@ -38,23 +38,21 @@ video{width:100%;max-height:58vh;background:#020617;border-radius:12px;object-fi
 </section>
 <section id="senderPanel" class="card hidden">
 <h2>📱 Android側（配信）</h2>
-<p class="hint">配信開始を押すと、この端末のカメラ・マイクを使用します。表示された接続IDをiPad側へ入力してください。</p>
-<button id="startStream" type="button">▶ カメラ・マイクを開始</button>
+<p class="hint">先にiPad側で受信IDを発行してください。そのIDを入力してから配信を開始します。</p>
+<label for="receiverPeerId">iPadに表示された受信ID</label>
+<input id="receiverPeerId" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="iPadの受信IDを入力">
+<button id="startStream" type="button">▶ カメラ・マイクを開始して送信</button>
 <button id="stopStream" class="danger" type="button" disabled>■ 配信を停止</button>
-<label>iPadに入力する接続ID</label>
-<div id="peerId" class="code">まだ発行されていません</div>
-<button id="copyPeerId" class="secondary" type="button" disabled>📋 接続IDをコピー</button>
 <video id="localVideo" autoplay playsinline muted></video>
-<p class="hint">自分の映像確認用です。カメラを使っている間はこのページを開いたままにしてください。</p>
+<p class="hint">カメラ・マイクの許可後、iPadへ接続します。</p>
 </section>
 <section id="receiverPanel" class="card hidden">
 <h2>🖥️ iPad側（受信）</h2>
-<label for="remotePeerId">Androidに表示された接続ID</label>
-<input id="remotePeerId" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Androidの接続IDを入力">
-<div class="row">
-<button id="connect" type="button">🔗 接続する</button>
+<p class="hint">「受信IDを発行」を押して、表示されたIDをAndroid側へ伝えてください。</p>
+<button id="createReceiver" type="button">🔑 受信IDを発行</button>
+<div id="peerId" class="code">まだ発行されていません</div>
+<button id="copyPeerId" class="secondary" type="button" disabled>📋 受信IDをコピー</button>
 <button id="disconnect" class="danger" type="button" disabled>切断</button>
-</div>
 <video id="remoteVideo" autoplay playsinline controls></video>
 <button id="playAudio" class="secondary" type="button">🔊 音声を再生</button>
 <p class="hint">iPadでは最初に音声再生ボタンを押す必要がある場合があります。</p>
@@ -81,49 +79,49 @@ const localVideo = $("localVideo");
 const remoteVideo = $("remoteVideo");
 let peer = null;
 let localStream = null;
-let incomingCall = null;
-let outgoingCall = null;
+let mediaCall = null;
 let activeMode = "";
 
-function setStatus(message){ status.textContent = message; }
+function setStatus(message){status.textContent=message;}
 function showMode(mode){
-  activeMode = mode;
-  senderPanel.classList.toggle("hidden", mode !== "sender");
-  receiverPanel.classList.toggle("hidden", mode !== "receiver");
-  setStatus(mode === "sender" ? "配信モードです。開始ボタンを押してください" : "受信モードです。Androidの接続IDを入力してください");
+  activeMode=mode;
+  senderPanel.classList.toggle("hidden",mode!=="sender");
+  receiverPanel.classList.toggle("hidden",mode!=="receiver");
+  setStatus(mode==="sender"?"Android配信モードです。iPadの受信IDを入力してください":"iPad受信モードです。受信IDを発行してください");
 }
 function closePeer(){
-  if(incomingCall){ try{incomingCall.close();}catch(_){} incomingCall=null; }
-  if(outgoingCall){ try{outgoingCall.close();}catch(_){} outgoingCall=null; }
-  if(peer){ try{peer.destroy();}catch(_){} peer=null; }
+  if(mediaCall){try{mediaCall.close();}catch(_){}mediaCall=null;}
+  if(peer){try{peer.destroy();}catch(_){}peer=null;}
 }
 function stopSender(){
   closePeer();
-  if(localStream){ localStream.getTracks().forEach(track=>track.stop()); localStream=null; }
+  if(localStream){localStream.getTracks().forEach(track=>track.stop());localStream=null;}
   localVideo.srcObject=null;
-  $("peerId").textContent="まだ発行されていません";
   $("startStream").disabled=false;
   $("stopStream").disabled=true;
-  $("copyPeerId").disabled=true;
 }
 function stopReceiver(){
   closePeer();
   remoteVideo.srcObject=null;
-  $("connect").disabled=false;
+  $("createReceiver").disabled=false;
+  $("copyPeerId").disabled=true;
+  $("peerId").textContent="まだ発行されていません";
   $("disconnect").disabled=true;
 }
 function peerError(error){
   const messages={
     "browser-incompatible":"このブラウザはWebRTCに対応していません",
-    "network":"PeerJSシグナリングサーバーへ接続できません。通信状態を確認してください",
-    "peer-unavailable":"Androidが見つかりません。IDと配信状態を確認してください",
-    "unavailable-id":"接続IDを発行できませんでした。もう一度お試しください",
-    "webrtc":"WebRTC接続に失敗しました。別ネットワークまたはTURNが必要な場合があります"
+    "network":"PeerJS接続サーバーへ接続できません。通信状態を確認してください",
+    "peer-unavailable":"iPadが見つかりません。受信IDとiPad側の待機状態を確認してください",
+    "unavailable-id":"受信IDを発行できませんでした。もう一度お試しください",
+    "webrtc":"WebRTC接続に失敗しました。ネットワーク環境を確認してください"
   };
-  setStatus("エラー："+(messages[error.type] || error.message || error.type));
+  setStatus("エラー："+(messages[error.type]||error.message||error.type));
 }
 async function startSender(){
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){setStatus("カメラを利用できません。HTTPSのChromeで開いてください");return;}
+  const receiverId=$("receiverPeerId").value.trim();
+  if(!receiverId){setStatus("先にiPadの受信IDを入力してください");return;}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setStatus("カメラを利用できません。HTTPSのChromeで開いてください");return;}
   $("startStream").disabled=true;
   setStatus("カメラ・マイクの許可を待っています…");
   try{
@@ -133,79 +131,74 @@ async function startSender(){
     });
     localVideo.srcObject=localStream;
     peer=new Peer(undefined,{debug:1});
-    peer.on("open", id=>{
-      $("peerId").textContent=id;
-      $("copyPeerId").disabled=false;
+    peer.on("open",()=>{
+      setStatus("iPadへ接続要求を送信中…");
+      mediaCall=peer.call(receiverId,localStream);
+      if(!mediaCall){setStatus("接続要求を作成できませんでした");stopSender();return;}
+      mediaCall.on("stream",()=>{});
+      mediaCall.on("close",()=>setStatus("iPadとの接続が終了しました"));
+      mediaCall.on("error",peerError);
       $("stopStream").disabled=false;
-      setStatus("✅ 配信準備完了。接続IDをiPadへ入力してください");
-    });
-    peer.on("call", call=>{
-      if(!localStream){call.close();return;}
-      if(incomingCall){incomingCall.close();}
-      incomingCall=call;
-      setStatus("iPadから接続要求。映像・音声を送信します");
-      call.answer(localStream);
-      call.on("close",()=>{if(incomingCall===call)incomingCall=null;setStatus("iPadとの接続が終了しました。配信待機中");});
-      call.on("error",peerError);
       setStatus("📡 iPadへ映像・音声を送信中");
     });
-    peer.on("error",peerError);
-    peer.on("disconnected",()=>setStatus("シグナリング接続が切れました。配信を再起動してください"));
-    peer.on("close",()=>setStatus("配信接続が終了しました"));
+    peer.on("error",error=>{peerError(error);$("startStream").disabled=false;});
+    peer.on("disconnected",()=>setStatus("接続サーバーとの通信が切れました"));
   }catch(error){
     stopSender();
-    let msg=error.name==="NotAllowedError"?"カメラ・マイクの許可が拒否されました。ブラウザ設定を確認してください":
+    const msg=error.name==="NotAllowedError"?"カメラ・マイクの許可が拒否されました。ブラウザ設定を確認してください":
       error.name==="NotFoundError"?"カメラまたはマイクが見つかりません":
-      error.name==="NotReadableError"?"カメラが他のアプリで使用中か、端末が利用を拒否しています":
-      (error.message||String(error));
+      error.name==="NotReadableError"?"カメラが他のアプリで使用中か、端末が利用を拒否しています":(error.message||String(error));
     setStatus("開始できません："+msg);
   }
 }
-async function connectReceiver(){
-  const id=$("remotePeerId").value.trim();
-  if(!id){setStatus("Androidの接続IDを入力してください");return;}
+function createReceiver(){
   if(typeof Peer==="undefined"){setStatus("PeerJSを読み込めません。ページを再読み込みしてください");return;}
-  $("connect").disabled=true;
-  setStatus("接続サーバーへ接続中…");
+  $("createReceiver").disabled=true;
+  setStatus("受信IDを発行中…");
   try{
     peer=new Peer(undefined,{debug:1});
-    peer.on("open",()=>{
-      setStatus("Androidへ接続要求を送信中…");
-      outgoingCall=peer.call(id,undefined);
-      if(!outgoingCall){setStatus("接続要求を作成できませんでした");$("connect").disabled=false;return;}
-      outgoingCall.on("stream",stream=>{
+    peer.on("open",id=>{
+      $("peerId").textContent=id;
+      $("copyPeerId").disabled=false;
+      setStatus("✅ 受信待機中。IDをAndroid側へ入力してください");
+    });
+    peer.on("call",call=>{
+      if(mediaCall){call.close();return;}
+      mediaCall=call;
+      setStatus("Androidから接続。映像・音声を受信しています…");
+      call.answer();
+      call.on("stream",stream=>{
         remoteVideo.srcObject=stream;
         remoteVideo.play().catch(()=>setStatus("映像を受信中です。音声再生ボタンを押してください"));
         $("disconnect").disabled=false;
         setStatus("✅ 接続しました。映像・音声を受信中");
       });
-      outgoingCall.on("close",()=>{remoteVideo.srcObject=null;$("disconnect").disabled=true;setStatus("接続が終了しました");});
-      outgoingCall.on("error",peerError);
+      call.on("close",()=>{remoteVideo.srcObject=null;mediaCall=null;$("disconnect").disabled=true;setStatus("Androidとの接続が終了しました");});
+      call.on("error",peerError);
     });
-    peer.on("error",error=>{peerError(error);$("connect").disabled=false;});
-    peer.on("disconnected",()=>setStatus("シグナリング接続が切れました"));
-  }catch(error){$("connect").disabled=false;setStatus("接続エラー："+error.message);}
+    peer.on("error",error=>{peerError(error);$("createReceiver").disabled=false;});
+    peer.on("disconnected",()=>setStatus("接続サーバーとの通信が切れました"));
+  }catch(error){$("createReceiver").disabled=false;setStatus("受信ID発行エラー："+error.message);}
 }
 $("senderMode").addEventListener("click",()=>showMode("sender"));
 $("receiverMode").addEventListener("click",()=>showMode("receiver"));
 $("startStream").addEventListener("click",startSender);
 $("stopStream").addEventListener("click",()=>{stopSender();setStatus("配信を停止しました");});
+$("createReceiver").addEventListener("click",createReceiver);
 $("copyPeerId").addEventListener("click",async()=>{
-  try{await navigator.clipboard.writeText($("peerId").textContent);setStatus("接続IDをコピーしました");}
-  catch(_){setStatus("コピーできません。接続IDを長押ししてコピーしてください");}
+  try{await navigator.clipboard.writeText($("peerId").textContent);setStatus("受信IDをコピーしました");}
+  catch(_){setStatus("コピーできません。受信IDを長押ししてコピーしてください");}
 });
-$("connect").addEventListener("click",connectReceiver);
 $("disconnect").addEventListener("click",()=>{stopReceiver();setStatus("切断しました");});
 $("playAudio").addEventListener("click",()=>{
   remoteVideo.muted=false;
   remoteVideo.play().then(()=>setStatus("音声を再生しています")).catch(()=>setStatus("再生できません。音量・消音設定を確認してください"));
 });
 window.addEventListener("pagehide",()=>{
-  // Explicitly release media when the page is closed; background capture is not promised.
-  if(activeMode==="sender") stopSender();
-  else if(activeMode==="receiver") stopReceiver();
+  if(activeMode==="sender")stopSender();
+  else if(activeMode==="receiver")stopReceiver();
 });
-if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(()=>{});
+if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
 if(!window.isSecureContext)setStatus("HTTPSで開いてください。GitHub PagesはHTTPSに対応しています");
 })();
 </script>
