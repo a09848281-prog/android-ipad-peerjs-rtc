@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>A22 Camera Link</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;background:#0b1220;color:#eef2ff}
+    *{box-sizing:border-box}body{margin:0;padding:20px;max-width:760px;margin-inline:auto}
+    h1{font-size:1.55rem;margin:5px 0 8px}.sub{color:#aab6ce;line-height:1.6}
+    .card{background:#151f32;border:1px solid #2b3952;border-radius:16px;padding:16px;margin:14px 0}
+    label{display:block;font-weight:650;margin:12px 0 6px}
+    input,textarea{width:100%;padding:13px;border:1px solid #465775;border-radius:10px;background:#0d1728;color:#fff;font:inherit}
+    textarea{min-height:80px;resize:vertical}button{border:0;border-radius:11px;padding:13px 16px;font:inherit;font-weight:700;background:#3b82f6;color:white;margin:8px 6px 0 0}
+    button.secondary{background:#34445f}button.danger{background:#b93848}
+    #status{font-weight:700;color:#93c5fd;min-height:1.5em}.hint{font-size:.9rem;color:#aab6ce;line-height:1.55}
+    video{width:100%;max-height:65vh;background:#020617;border-radius:12px;object-fit:contain}
+    .row{display:flex;gap:8px;flex-wrap:wrap}.row button{flex:1}
+    code{overflow-wrap:anywhere;color:#bfdbfe}
+  </style>
+</head>
+<body>
+  <h1>📷 A22 Camera Link</h1>
+  <p class="sub">iPadで映像・音声を受信するPWAです。映像と音声はWebRTCで端末間に送信し、GASには接続情報だけを一時保存します。</p>
+
+  <section class="card">
+    <label for="gasUrl">① GAS WebアプリURL</label>
+    <input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/...../exec" autocomplete="url">
+    <label for="room">② 接続コード（Androidにも同じ番号を入力）</label>
+    <input id="room" inputmode="numeric" maxlength="12" placeholder="12桁の数字">
+    <div class="row">
+      <button id="newCode" class="secondary" type="button">🔑 新しいコードを作る</button>
+      <button id="copyCode" class="secondary" type="button">📋 コードをコピー</button>
+    </div>
+    <label for="turnServers">TURNサーバー設定（任意・JSON配列）</label>
+    <textarea id="turnServers" placeholder='[{"urls":"turn:example.com:3478","username":"ユーザー名","credential":"パスワード"}]'></textarea>
+    <p class="hint">STUNだけで接続できないネットワークではTURNが必要です。TURNを使う場合は、利用契約のあるサーバー情報をここへ入力してください。認証情報はこのiPad内に保存し、GitHubには登録しません。</p>
+    <div class="row">
+      <button id="connect" type="button">▶ 接続して受信</button>
+      <button id="stop" class="danger" type="button">■ 切断</button>
+    </div>
+    <p id="status" role="status">待機中</p>
+  </section>
+
+  <section class="card">
+    <h2>受信映像・音声</h2>
+    <video id="remoteVideo" autoplay playsinline controls></video>
+    <button id="enableAudio" class="secondary" type="button">🔊 音声を再生</button>
+    <p class="hint">iPadの消音スイッチ・音量・Safariの自動再生制限により、最初に音声ボタンを押す必要がある場合があります。</p>
+  </section>
+
+  <section class="card">
+    <h2>接続手順</h2>
+    <p class="hint">1. GASをデプロイしてURLを入力します。<br>2. 接続コードを作り、Androidアプリにも同じ12桁を入力します。<br>3. Androidで「配信開始」を押し、通知に「カメラ・マイク使用中」と表示された状態にします。<br>4. iPadで「接続して受信」を押します。<br>5. 画面をロックする場合も、Androidの配信通知を残してください。</p>
+    <p class="hint">このコードは個人利用向けの試作です。接続コードを他人に共有しないでください。Androidが停止・再起動された場合は、アプリを開いて配信を再開する必要があります。</p>
+  </section>
+
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  const gasInput = $("gasUrl");
+  const roomInput = $("room");
+  const turnInput = $("turnServers");
+  const status = $("status");
+  const video = $("remoteVideo");
+  let pc = null;
+  let afterId = 0;
+  let pollTimer = null;
+  let polling = false;
+  let postQueue = Promise.resolve();
+  let remoteCandidates = [];
+  let live = false;
+  let pollScript = null;
+
+  gasInput.value = localStorage.getItem("a22_gas_url") || "";
+  turnInput.value = localStorage.getItem("a22_turn_servers") || "";
+  roomInput.value = localStorage.getItem("a22_room") || "";
+
+  function setStatus(message){ status.textContent = message; }
+  function validGasUrl(value){
+    return value.startsWith("https://script.google.com/macros/s/") && value.endsWith("/exec");
+  }
+  function validRoom(value){ return /^[0-9]{12}$/.test(value); }
+  function makeRoom(){
+    const bytes = new Uint8Array(12);
+    crypto.getRandomValues(bytes);
+    let result = "";
+    for (const b of bytes) result += String(b % 10);
+    roomInput.value = result;
+    localStorage.setItem("a22_room", result);
+  }
+  $("newCode").addEventListener("click", makeRoom);
+  $("copyCode").addEventListener("click", async function(){
+    if (!roomInput.value) return setStatus("先に接続コードを作成してください");
+    try { await navigator.clipboard.writeText(roomInput.value); setStatus("接続コードをコピーしました"); }
+    catch(e){ setStatus("コピーできません。コードを手動で控えてください"); }
+  });
+
+  function sendSignal(type, data){
+    const payload = {room:roomInput.value, from:"ipad", type:type, data:data};
+    postQueue = postQueue.then(function(){
+      return fetch(gasInput.value, {
+        method:"POST",
+        mode:"no-cors",
+        headers:{"Content-Type":"text/plain;charset=UTF-8"},
+        body:JSON.stringify(payload)
+      });
+    }).catch(function(error){ setStatus("GAS送信エラー: " + error.message); });
+    return postQueue;
+  }
+
+  function pollOnce(){
+    if (!live || polling) return;
+    polling = true;
+    const query = new URLSearchParams({
+      action:"poll", room:roomInput.value, after:String(afterId),
+      from:"ipad", callback:"signalResult"
+    });
+    const script = document.createElement("script");
+    pollScript = script;
+    window.signalResult = function(result){
+      polling = false;
+      script.remove();
+      if (!result || result.error){ setStatus("GAS応答エラー"); return; }
+      afterId = Math.max(afterId, Number(result.next || afterId));
+      const messages = Array.isArray(result.messages) ? result.messages : [];
+      messages.reduce(function(chain, message){
+        return chain.then(function(){ return processSignal(message); });
+      }, Promise.resolve()).finally(function(){
+        if (live) pollTimer = setTimeout(pollOnce, 1200);
+      });
+    };
+    script.onerror = function(){
+      polling = false;
+      script.remove();
+      if (live){ setStatus("GASに接続できません。URLやデプロイ設定を確認してください"); pollTimer = setTimeout(pollOnce, 3000); }
+    };
+    script.src = gasInput.value + "?"+ query.toString();
+    document.body.appendChild(script);
+  }
+
+  async function processSignal(message){
+    if (!pc || !message || message.from === "ipad") return;
+    if (message.type === "answer"){
+      await pc.setRemoteDescription(new RTCSessionDescription(message.data));
+      for (const candidate of remoteCandidates) await pc.addIceCandidate(candidate);
+      remoteCandidates = [];
+      setStatus("回答を受信。WebRTC接続を確立中…");
+    } else if (message.type === "candidate"){
+      const candidate = new RTCIceCandidate(message.data);
+      if (pc.remoteDescription) await pc.addIceCandidate(candidate);
+      else remoteCandidates.push(candidate);
+    } else if (message.type === "hangup"){
+      stopConnection(false);
+      setStatus("Android側から切断されました");
+    }
+  }
+
+  async function startConnection(){
+    const gas = gasInput.value.trim();
+    const room = roomInput.value.trim();
+    if (!validGasUrl(gas)) return setStatus("GASの /exec URLを入力してください");
+    if (!validRoom(room)) return setStatus("12桁の接続コードを入力してください");
+    let turnServers = [];
+    try {
+      const raw = turnInput.value.trim();
+      if (raw) {
+        turnServers = JSON.parse(raw);
+        if (!Array.isArray(turnServers)) throw new Error("配列ではありません");
+      }
+    } catch(error){ return setStatus("TURN設定JSONを確認してください: " + error.message); }
+
+    localStorage.setItem("a22_gas_url", gas);
+    localStorage.setItem("a22_room", room);
+    localStorage.setItem("a22_turn_servers", turnInput.value);
+    stopConnection(false);
+    afterId = 0;
+    remoteCandidates = [];
+    live = true;
+    const iceServers = [
+      {urls:"stun:stun.l.google.com:19302"},
+      {urls:"stun:stun1.l.google.com:19302"},
+      {urls:"stun:stun.cloudflare.com:3478"}
+    ].concat(turnServers);
+    pc = new RTCPeerConnection({iceServers:iceServers, iceTransportPolicy:"all"});
+    pc.addTransceiver("video", {direction:"recvonly"});
+    pc.addTransceiver("audio", {direction:"recvonly"});
+    pc.ontrack = function(event){
+      if (event.streams && event.streams[0]) video.srcObject = event.streams[0];
+      video.play().catch(function(){ setStatus("映像を受信中。音声ボタンを押してください"); });
+    };
+    pc.onicecandidate = function(event){
+      if (event.candidate) sendSignal("candidate", event.candidate.toJSON());
+    };
+    pc.onconnectionstatechange = function(){
+      if (!pc) return;
+      const state = pc.connectionState;
+      if (state === "connected") setStatus("✅ 接続しました。映像・音声を受信中");
+      else if (state === "failed") setStatus("ICE接続失敗。TURNサーバー設定が必要な可能性があります");
+      else if (state === "disconnected") setStatus("接続が一時切断されました。再接続を待機中…");
+      else if (state === "connecting") setStatus("WebRTC接続中…");
+    };
+    setStatus("接続情報を送信中…");
+    try {
+      await sendSignal("iceconfig", iceServers);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await sendSignal("offer", {type:offer.type, sdp:offer.sdp});
+      pollOnce();
+      setStatus("Androidからの応答を待っています。Android側で配信を開始してください");
+    } catch(error){
+      setStatus("接続準備に失敗: " + error.message);
+      stopConnection(false);
+    }
+  }
+
+  function stopConnection(sendHangup){
+    live = false;
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+    polling = false;
+    if (pollScript) pollScript.remove();
+    pollScript = null;
+    if (sendHangup && validRoom(roomInput.value) && validGasUrl(gasInput.value)) sendSignal("hangup", {});
+    if (pc){ pc.ontrack = null; pc.onicecandidate = null; pc.close(); pc = null; }
+    video.srcObject = null;
+  }
+
+  $("connect").addEventListener("click", startConnection);
+  $("stop").addEventListener("click", function(){ stopConnection(true); setStatus("切断しました"); });
+  $("enableAudio").addEventListener("click", function(){
+    video.muted = false;
+    video.play().then(function(){ setStatus("音声を再生しています"); }).catch(function(){ setStatus("再生できません。iPadの消音設定と音量を確認してください"); });
+  });
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(function(){});
+  if (!window.isSecureContext) setStatus("HTTPSで開いてください（GitHub PagesはHTTPSです）");
+})();
+</script>
+</body>
+</html>
