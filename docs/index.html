@@ -57,7 +57,7 @@ video{width:100%;max-height:58vh;background:#020617;border-radius:12px;object-fi
 const $=id=>document.getElementById(id);
 const status=$("status"),remote=$("remote");
 let pc=null,timer=null,room="",gasUrl="",lastId=0,pollBusy=false,closing=false;
-let pendingCandidates=[];
+let pendingCandidates=[],answerApplied=false;
 const STUN=[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}];
 function setStatus(s){status.textContent=s;}
 function validSettings(){
@@ -98,8 +98,18 @@ async function handleMessage(msg){
  if(!pc||closing)return;
  try{
   if(msg.type==="answer"){
+   // Accept exactly one answer for the current offer. Ignore duplicates and
+   // late answers after the peer connection has already returned to stable.
+   if(answerApplied || pc.signalingState!=="have-local-offer") return;
    const data=typeof msg.data==="string"?JSON.parse(msg.data):msg.data;
-   await pc.setRemoteDescription({type:"answer",sdp:data.sdp});
+   if(!data || typeof data.sdp!=="string") throw new Error("Answer SDPがありません");
+   answerApplied=true;
+   try {
+    await pc.setRemoteDescription({type:"answer",sdp:data.sdp});
+   } catch(e) {
+    answerApplied=false;
+    throw e;
+   }
    for(const c of pendingCandidates){try{await pc.addIceCandidate(c);}catch(_){}}
    pendingCandidates=[];setStatus("Androidの応答を受信。接続を確立しています…");
   }else if(msg.type==="candidate"){
@@ -113,7 +123,7 @@ async function handleMessage(msg){
 }
 async function start(){
  if(!validSettings())return;
- $("start").disabled=true;$("stop").disabled=false;closing=false;lastId=0;pendingCandidates=[];
+ $("start").disabled=true;$("stop").disabled=false;closing=false;lastId=0;pendingCandidates=[];answerApplied=false;
  try{
   pc=new RTCPeerConnection({iceServers:STUN});
   pc.addTransceiver("video",{direction:"recvonly"});
