@@ -1,12 +1,13 @@
 {
-  "name": "A22 Camera Link",
-  "short_name": "A22 Link",
-  "description": "AndroidからiPadへWebRTCで映像と音声を送信する個人用PWA",
+  "name": "WebRTC Camera Link",
+  "short_name": "Camera Link",
+  "description": "AndroidとiPadで使えるWebRTCカメラ・マイク共有PWA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#0b1220",
-  "theme_color": "#111827",
+  "theme_color": "#101827",
   "icons": [
     {
       "src": "./icon.svg",
