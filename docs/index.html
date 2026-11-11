@@ -194,10 +194,6 @@ $("playAudio").addEventListener("click",()=>{
   remoteVideo.muted=false;
   remoteVideo.play().then(()=>setStatus("音声を再生しています")).catch(()=>setStatus("再生できません。音量・消音設定を確認してください"));
 });
-window.addEventListener("pagehide",()=>{
-  if(activeMode==="sender")stopSender();
-  else if(activeMode==="receiver")stopReceiver();
-});
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
 if(!window.isSecureContext)setStatus("HTTPSで開いてください。GitHub PagesはHTTPSに対応しています");
 })();
