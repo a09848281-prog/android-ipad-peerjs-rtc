@@ -60,6 +60,9 @@ public class StreamService extends Service {
     private long lastMessageId = 0;
     private volatile boolean running = false;
     private volatile boolean remoteDescriptionReady = false;
+    // One offer is accepted per streaming session. This prevents duplicate
+    // signaling messages from replacing a PeerConnection while SDP callbacks run.
+    private volatile boolean offerHandled = false;
 
     private HandlerThread workerThread;
     private volatile Handler worker;
@@ -115,6 +118,9 @@ public class StreamService extends Service {
 
         if (!running) {
             running = true;
+            offerHandled = false;
+            remoteDescriptionReady = false;
+            pendingCandidates.clear();
             acquireWakeLock();
             workerThread = new HandlerThread("A22WebRtcWorker");
             workerThread.start();
@@ -224,6 +230,13 @@ public class StreamService extends Service {
             return;
         }
         if ("offer".equals(type)) {
+            // Ignore duplicate offers in the same session. Replacing the peer
+            // connection while asynchronous SDP callbacks are pending is unsafe.
+            if (offerHandled) {
+                updateNotification("重複した接続要求を無視しました");
+                return;
+            }
+            offerHandled = true;
             try {
                 JSONObject sdpJson = data instanceof JSONObject ? (JSONObject) data : new JSONObject(String.valueOf(data));
                 createPeerConnection();
@@ -280,6 +293,7 @@ public class StreamService extends Service {
             } catch (Exception ignored) { }
         } else if ("hangup".equals(type)) {
             closePeerConnection();
+            offerHandled = false;
             updateNotification("iPadから切断されました／待機中");
         }
     }
